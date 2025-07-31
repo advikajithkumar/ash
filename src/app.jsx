@@ -1,102 +1,29 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Home, BookOpen, Target, Calendar, BarChart2, FileText, Link as LinkIcon, Upload, Check, X, ChevronsRight, Globe } from 'lucide-react';
+import { Home, BookOpen, Target, Calendar, BarChart2, FileText, Link as LinkIcon, Upload, Check, X, ChevronsRight, Globe, AlertTriangle } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 
-// --- DATA STORE ---
-// This object holds all the syllabus data, resources, and will track your progress.
-// Updated to better reflect the NSW Year 11 NESA Syllabus.
+// --- IMPORTANT: PASTE YOUR FIREBASE CONFIG HERE ---
+// Replace this object with the one you copied from your Firebase project setup.
+const firebaseConfig = {
+  apiKey: "AIzaSyDKKCRG6kLbI8wQAD-sbE8SiyOUjq1G_bE",
+  authDomain: "advik-study.firebaseapp.com",
+  projectId: "advik-study",
+  storageBucket: "advik-study.appspot.com", // Corrected this line for you
+  messagingSenderId: "445992809856",
+  appId: "1:445992809856:web:105e09620a8cfbde197d65",
+  measurementId: "G-KZCMCRDQXT"
+};
+
+// --- DATA STORE (Default structure if no data is found in Firebase) ---
 const initialStudyData = {
-  maths: {
-    name: "Mathematics (Adv & Ext 1)",
-    icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 12-8-8"/><path d="m20 4-8 8"/><path d="M4 20c3.31 0 6-2.69 6-6s-2.69-6-6-6-6 2.69-6 6 2.69 6 6 6Z"/><path d="M18 14c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4Z"/></svg>,
-    uploadedWorksheets: [],
-    uploadedResources: [],
-    modules: [
-      { id: 'm1', title: 'MA-F1 & ME-F1: Functions', topics: [
-          { id: 't1', title: 'Graphical Relationships', objective: 'Understand domain/range, and transformations of graphs.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'THSC Online', url: 'https://www.thsc.online/' }] },
-          { id: 't2', title: 'Polynomials (Ext 1)', objective: 'Master polynomial functions, parameters, and solving polynomial equations.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Khan Academy', url: 'https://www.khanacademy.org/math' }], worksheets: [{ name: 'Topic Tests', url: 'https://www.thsc.online/topic-tests' }] },
-      ]},
-      { id: 'm2', title: 'MA-T & ME-T: Trigonometric Functions', topics: [
-          { id: 't3', title: 'Trigonometry & Measure of Angles', objective: 'Master trig functions, identities, and equations in radians.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'Practice Sheet', url: 'https://www.google.com/search?q=NSW+Maths+Advanced+Trigonometry+Worksheet+PDF' }] },
-          { id: 't4', title: 'Inverse Trig Functions (Ext 1)', objective: 'Understand and apply inverse trig functions and their graphs.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Desmos', url: 'https://www.desmos.com/calculator' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Inverse+Trigonometric+Functions+Worksheet' }] },
-      ]},
-      { id: 'm3', title: 'MA-C1 & ME-C1: Calculus', topics: [
-          { id: 't5', title: 'Introduction to Differentiation', objective: 'Apply differentiation rules (product, quotient, chain) to curves.', completed: false, score: null, maxScore: 40, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'Practice Problems', url: 'https://www.google.com/search?q=Chain+Rule+Practice+Problems+PDF' }] },
-          { id: 't6', title: 'Further Calculus Skills (Ext 1)', objective: 'Differentiate trig, exponential, and logarithmic functions.', completed: false, score: null, maxScore: 35, resources: [{ name: 'Math LibreTexts', url: 'https://math.libretexts.org/Bookshelves/Calculus' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Calculus+Worksheet+Derivatives' }] },
-      ]},
-    ]
-  },
-  chemistry: {
-    name: "Chemistry",
-    icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.2 3.8 21 8l-2.7 2.7c-.2.2-.5.2-.7 0l-1-1c-.2-.2-.2-.5 0-.7Z"/><path d="M12.5 6.5 7 12l-1.7-1.7c-.2-.2-.5-.2-.7 0l-1 1c-.2-.2-.2-.5 0-.7L6.3 8"/><path d="m12 7 6.5 6.5"/><path d="M12.5 17.5 18 12l1.7 1.7c.2.2.5.2.7 0l1-1c.2-.2.2-.5 0-.7L18.7 9"/><path d="M7 12.5 1.5 7"/><path d="M3.8 16.2 8 21l2.7-2.7c-.2-.2.2-.5 0-.7l-1-1c-.2-.2-.5-.2-.7 0Z"/></svg>,
-    uploadedWorksheets: [],
-    uploadedResources: [],
-    modules: [
-      { id: 'm1', title: 'Module 1: Properties and Structure of Matter', topics: [
-          { id: 't1', title: 'Periodicity & Bonding', objective: 'Analyse trends in the periodic table and types of chemical bonds.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Phet Sims', url: 'https://phet.colorado.edu/en/simulations/filter?subjects=chemistry' }], worksheets: [{ name: 'Worksheet', url: 'https://www.google.com/search?q=Periodicity+and+Bonding+Worksheet' }] },
-      ]},
-      { id: 'm2', title: 'Module 2: Introduction to Quantitative Chemistry', topics: [
-          { id: 't2', title: 'The Mole Concept & Stoichiometry', objective: 'Perform calculations using moles, molar mass, and balanced equations.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Khan Academy', url: 'https://www.khanacademy.org/science/chemistry/chemical-reactions-stoichiometry' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Stoichiometry+practice+problems+with+answers' }] },
-      ]},
-      { id: 'm3', title: 'Module 3: Reactive Chemistry', topics: [
-          { id: 't3', title: 'Rates of Reactions', objective: 'Understand and calculate rates of reaction and collision theory.', completed: false, score: null, maxScore: 25, resources: [{ name: 'LibreTexts', url: 'https://chem.libretexts.org/Bookshelves/General_Chemistry' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Rates+of+Reaction+Worksheet' }] },
-      ]},
-      { id: 'm4', title: 'Module 4: Drivers of Reaction', topics: [
-          { id: 't4', title: 'Energy Changes & Enthalpy', objective: 'Understand Enthalpy (ΔH), Endothermic vs. Exothermic reactions.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Atomi', url: 'https://getatomi.com/' }], worksheets: [{ name: 'Hess\'s Law Practice', url: 'https://www.chem.ucla.edu/~harding/IGOC/H/hesslaw.html' }] },
-      ]},
-    ]
-  },
-  english: {
-    name: "English Advanced",
-    icon: BookOpen,
-    uploadedWorksheets: [],
-    uploadedResources: [],
-    modules: [
-      { id: 'm1', title: 'Common Module: Reading to Write', topics: [
-          { id: 't1', title: 'Textual Analysis & Essay Writing', objective: 'Analyse texts and articulate purpose and context in a sophisticated manner.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Art of Smart', url: 'https://artofsmart.com.au/' }], worksheets: [{ name: 'Past Papers', url: 'https://www.nsw.gov.au/education-and-training/nesa/past-hsc-exam-papers' }] },
-      ]},
-      { id: 'm2', title: 'Module A: Textual Conversations', topics: [
-          { id: 't2', title: 'Comparative Study', objective: 'Compare a pair of prescribed texts, analysing their connections.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Your Texts', url: '#' }], worksheets: [{ name: 'Essay Questions', url: 'https://www.google.com/search?q=HSC+English+Module+A+essay+questions' }] },
-      ]},
-      { id: 'm3', title: 'Module B: Critical Study of Literature', topics: [
-          { id: 't3', title: 'In-depth Textual Analysis', objective: 'Develop a detailed analytical and critical response to a text.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Your Text', url: '#' }], worksheets: [{ name: 'Essay Questions', url: 'https://www.google.com/search?q=HSC+English+Module+B+essay+questions' }] },
-      ]},
-    ]
-  },
-  pdhpe: {
-    name: "PDHPE",
-    icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M5 12a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2"/><path d="M5 12a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2"/></svg>,
-    uploadedWorksheets: [],
-    uploadedResources: [],
-    modules: [
-      { id: 'm1', title: 'Core 1: Better Health for Individuals', topics: [
-          { id: 't1', title: 'Social Constructs of Health', objective: 'Analyse how factors like socioeconomic status and culture shape health.', completed: false, score: null, maxScore: 15, resources: [{ name: 'PDHPE.net', url: 'http://pdhpe.net/better-health-for-individuals/' }], worksheets: [{ name: 'AIHW Data', url: 'https://www.aihw.gov.au/' }] },
-      ]},
-      { id: 'm2', title: 'Core 2: The Body in Motion', topics: [
-          { id: 't2', title: 'Anatomy & Physiology', objective: 'Understand anatomical terminology and function of body systems.', completed: false, score: null, maxScore: 30, resources: [{ name: 'CrashCourse', url: 'https://www.youtube.com/playlist?list=PL8dPuuaLjXtOAKed_MxxWBNaPno5h3Zs8' }], worksheets: [{ name: 'Anatomy Labelling', url: 'https://www.google.com/search?q=Anatomy+labelling+worksheet+PDF' }] },
-      ]},
-      { id: 'm3', title: 'Options (Study 2 of 4)', topics: [
-          { id: 't3', title: 'Option: First Aid', objective: 'Develop skills and knowledge for assessing and managing first aid scenarios.', completed: false, score: null, maxScore: 20, resources: [{ name: 'St John Ambulance', url: 'https://www.stjohn.org.au/first-aid-facts/' }], worksheets: [{ name: 'Scenario Practice', url: 'https://www.google.com/search?q=first+aid+scenarios+and+answers+pdf' }] },
-          { id: 't4', title: 'Option: Fitness Choices', objective: 'Critically analyse fitness choices and develop personal fitness plans.', completed: false, score: null, maxScore: 20, resources: [{ name: 'AIS', url: 'https://www.ais.gov.au/' }], worksheets: [{ name: 'Program Design', url: 'https://www.google.com/search?q=fitness+program+design+template' }] },
-      ]},
-    ]
-  },
-  agriculture: {
-    name: "Agriculture",
-    icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 20A7 7 0 0 1 4 13V6a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1"/><path d="M11 20v-4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4"/><path d="M11 20a7 7 0 0 1 7-7h0"/><path d="M18 20a3 3 0 0 1-3-3V6a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1"/></svg>,
-    uploadedWorksheets: [],
-    uploadedResources: [],
-    modules: [
-      { id: 'm1', title: 'Preliminary Content', topics: [
-        { id: 't1', title: 'Overview of Australian Agriculture', objective: 'Understand the scope and importance of Australian agriculture.', completed: false, score: null, maxScore: 15, resources: [{ name: 'ABARES', url: 'https://www.agriculture.gov.au/abares' }], worksheets: [{ name: 'Industry Stats', url: 'https://www.nff.org.au/get-the-facts/' }] },
-        { id: 't2', title: 'Basic Animal and Plant Physiology', objective: 'Understand fundamental biological processes in agricultural species.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Tocal College', url: 'https://www.tocal.nsw.edu.au/publications' }], worksheets: [{ name: 'Diagrams', url: 'https://www.google.com/search?q=plant+and+animal+cell+diagram+worksheet' }] },
-      ]},
-      { id: 'm2', title: 'Production Systems Case Study', topics: [
-        { id: 't3', title: 'Plant Production: Wheat', objective: 'Investigate wheat production from sowing to market.', completed: false, score: null, maxScore: 25, resources: [{ name: 'NSW DPI', url: 'https://www.dpi.nsw.gov.au/' }], worksheets: [{ name: 'Past HSC Qs', url: 'https://www.nsw.gov.au/education-and-training/nesa/past-hsc-exam-papers' }] },
-        { id: 't4', title: 'Animal Production: Prime Lambs', objective: 'Evaluate prime lamb production operations and challenges.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Meat & Livestock Aus', url: 'https://www.mla.com.au/' }], worksheets: [{ name: 'Case Study Guide', url: 'https://www.google.com/search?q=agriculture+case+study+template' }] },
-      ]}
-    ]
-  }
+  maths: { name: "Mathematics (Adv & Ext 1)", icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 12-8-8"/><path d="m20 4-8 8"/><path d="M4 20c3.31 0 6-2.69 6-6s-2.69-6-6-6-6 2.69-6 6 2.69 6 6 6Z"/><path d="M18 14c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4Z"/></svg>, uploadedWorksheets: [], uploadedResources: [], modules: [ { id: 'm1', title: 'MA-F1 & ME-F1: Functions', topics: [ { id: 't1', title: 'Graphical Relationships', objective: 'Understand domain/range, and transformations of graphs.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'THSC Online', url: 'https://www.thsc.online/' }] }, { id: 't2', title: 'Polynomials (Ext 1)', objective: 'Master polynomial functions, parameters, and solving polynomial equations.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Khan Academy', url: 'https://www.khanacademy.org/math' }], worksheets: [{ name: 'Topic Tests', url: 'https://www.thsc.online/topic-tests' }] }, ]}, { id: 'm2', title: 'MA-T & ME-T: Trigonometric Functions', topics: [ { id: 't3', title: 'Trigonometry & Measure of Angles', objective: 'Master trig functions, identities, and equations in radians.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'Practice Sheet', url: 'https://www.google.com/search?q=NSW+Maths+Advanced+Trigonometry+Worksheet+PDF' }] }, { id: 't4', title: 'Inverse Trig Functions (Ext 1)', objective: 'Understand and apply inverse trig functions and their graphs.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Desmos', url: 'https://www.desmos.com/calculator' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Inverse+Trigonometric+Functions+Worksheet' }] }, ]}, { id: 'm3', title: 'MA-C1 & ME-C1: Calculus', topics: [ { id: 't5', title: 'Introduction to Differentiation', objective: 'Apply differentiation rules (product, quotient, chain) to curves.', completed: false, score: null, maxScore: 40, resources: [{ name: 'Eddie Woo', url: 'https://www.youtube.com/c/misterwootube' }], worksheets: [{ name: 'Practice Problems', url: 'https://www.google.com/search?q=Chain+Rule+Practice+Problems+PDF' }] }, { id: 't6', title: 'Further Calculus Skills (Ext 1)', objective: 'Differentiate trig, exponential, and logarithmic functions.', completed: false, score: null, maxScore: 35, resources: [{ name: 'Math LibreTexts', url: 'https://math.libretexts.org/Bookshelves/Calculus' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Calculus+Worksheet+Derivatives' }] }, ]}, ]},
+  chemistry: { name: "Chemistry", icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.2 3.8 21 8l-2.7 2.7c-.2.2-.5.2-.7 0l-1-1c-.2-.2-.2-.5 0-.7Z"/><path d="M12.5 6.5 7 12l-1.7-1.7c-.2-.2-.5-.2-.7 0l-1 1c-.2-.2-.2-.5 0-.7L6.3 8"/><path d="m12 7 6.5 6.5"/><path d="M12.5 17.5 18 12l1.7 1.7c.2.2.5.2.7 0l1-1c-.2-.2.2-.5 0-.7L18.7 9"/><path d="M7 12.5 1.5 7"/><path d="M3.8 16.2 8 21l2.7-2.7c-.2-.2.2-.5 0-.7l-1-1c-.2-.2-.5-.2-.7 0Z"/></svg>, uploadedWorksheets: [], uploadedResources: [], modules: [ { id: 'm1', title: 'Module 1: Properties and Structure of Matter', topics: [ { id: 't1', title: 'Periodicity & Bonding', objective: 'Analyse trends in the periodic table and types of chemical bonds.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Phet Sims', url: 'https://phet.colorado.edu/en/simulations/filter?subjects=chemistry' }], worksheets: [{ name: 'Worksheet', url: 'https://www.google.com/search?q=Periodicity+and+Bonding+Worksheet' }] }, ]}, { id: 'm2', title: 'Module 2: Introduction to Quantitative Chemistry', topics: [ { id: 't2', title: 'The Mole Concept & Stoichiometry', objective: 'Perform calculations using moles, molar mass, and balanced equations.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Khan Academy', url: 'https://www.khanacademy.org/science/chemistry/chemical-reactions-stoichiometry' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Stoichiometry+practice+problems+with+answers' }] }, ]}, { id: 'm3', title: 'Module 3: Reactive Chemistry', topics: [ { id: 't3', title: 'Rates of Reactions', objective: 'Understand and calculate rates of reaction and collision theory.', completed: false, score: null, maxScore: 25, resources: [{ name: 'LibreTexts', url: 'https://chem.libretexts.org/Bookshelves/General_Chemistry' }], worksheets: [{ name: 'Practice Qs', url: 'https://www.google.com/search?q=Rates+of+Reaction+Worksheet' }] }, ]}, { id: 'm4', title: 'Module 4: Drivers of Reaction', topics: [ { id: 't4', title: 'Energy Changes & Enthalpy', objective: 'Understand Enthalpy (ΔH), Endothermic vs. Exothermic reactions.', completed: false, score: null, maxScore: 30, resources: [{ name: 'Atomi', url: 'https://getatomi.com/' }], worksheets: [{ name: 'Hess\'s Law Practice', url: 'https://www.chem.ucla.edu/~harding/IGOC/H/hesslaw.html' }] }, ]}, ]},
+  english: { name: "English Advanced", icon: BookOpen, uploadedWorksheets: [], uploadedResources: [], modules: [ { id: 'm1', title: 'Common Module: Reading to Write', topics: [ { id: 't1', title: 'Textual Analysis & Essay Writing', objective: 'Analyse texts and articulate purpose and context in a sophisticated manner.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Art of Smart', url: 'https://artofsmart.com.au/' }], worksheets: [{ name: 'Past Papers', url: 'https://www.nsw.gov.au/education-and-training/nesa/past-hsc-exam-papers' }] }, ]}, { id: 'm2', title: 'Module A: Textual Conversations', topics: [ { id: 't2', title: 'Comparative Study', objective: 'Compare a pair of prescribed texts, analysing their connections.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Your Texts', url: '#' }], worksheets: [{ name: 'Essay Questions', url: 'https://www.google.com/search?q=HSC+English+Module+A+essay+questions' }] }, ]}, { id: 'm3', title: 'Module B: Critical Study of Literature', topics: [ { id: 't3', title: 'In-depth Textual Analysis', objective: 'Develop a detailed analytical and critical response to a text.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Your Text', url: '#' }], worksheets: [{ name: 'Essay Questions', url: 'https://www.google.com/search?q=HSC+English+Module+B+essay+questions' }] }, ]}, ]},
+  pdhpe: { name: "PDHPE", icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M5 12a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2"/><path d="M5 12a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2"/></svg>, uploadedWorksheets: [], uploadedResources: [], modules: [ { id: 'm1', title: 'Core 1: Better Health for Individuals', topics: [ { id: 't1', title: 'Social Constructs of Health', objective: 'Analyse how factors like socioeconomic status and culture shape health.', completed: false, score: null, maxScore: 15, resources: [{ name: 'PDHPE.net', url: 'http://pdhpe.net/better-health-for-individuals/' }], worksheets: [{ name: 'AIHW Data', url: 'https://www.aihw.gov.au/' }] }, ]}, { id: 'm2', title: 'Core 2: The Body in Motion', topics: [ { id: 't2', title: 'Anatomy & Physiology', objective: 'Understand anatomical terminology and function of body systems.', completed: false, score: null, maxScore: 30, resources: [{ name: 'CrashCourse', url: 'https://www.youtube.com/playlist?list=PL8dPuuaLjXtOAKed_MxxWBNaPno5h3Zs8' }], worksheets: [{ name: 'Anatomy Labelling', url: 'https://www.google.com/search?q=Anatomy+labelling+worksheet+PDF' }] }, ]}, { id: 'm3', title: 'Options (Study 2 of 4)', topics: [ { id: 't3', title: 'Option: First Aid', objective: 'Develop skills and knowledge for assessing and managing first aid scenarios.', completed: false, score: null, maxScore: 20, resources: [{ name: 'St John Ambulance', url: 'https://www.stjohn.org.au/first-aid-facts/' }], worksheets: [{ name: 'Scenario Practice', url: 'https://www.google.com/search?q=first+aid+scenarios+and+answers+pdf' }] }, { id: 't4', title: 'Option: Fitness Choices', objective: 'Critically analyse fitness choices and develop personal fitness plans.', completed: false, score: null, maxScore: 20, resources: [{ name: 'AIS', url: 'https://www.ais.gov.au/' }], worksheets: [{ name: 'Program Design', url: 'https://www.google.com/search?q=fitness+program+design+template' }] }, ]}, ]},
+  agriculture: { name: "Agriculture", icon: ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 20A7 7 0 0 1 4 13V6a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1"/><path d="M11 20v-4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4"/><path d="M11 20a7 7 0 0 1 7-7h0"/><path d="M18 20a3 3 0 0 1-3-3V6a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1"/></svg>, uploadedWorksheets: [], uploadedResources: [], modules: [ { id: 'm1', title: 'Preliminary Content', topics: [ { id: 't1', title: 'Overview of Australian Agriculture', objective: 'Understand the scope and importance of Australian agriculture.', completed: false, score: null, maxScore: 15, resources: [{ name: 'ABARES', url: 'https://www.agriculture.gov.au/abares' }], worksheets: [{ name: 'Industry Stats', url: 'https://www.nff.org.au/get-the-facts/' }] }, { id: 't2', title: 'Basic Animal and Plant Physiology', objective: 'Understand fundamental biological processes in agricultural species.', completed: false, score: null, maxScore: 20, resources: [{ name: 'Tocal College', url: 'https://www.tocal.nsw.edu.au/publications' }], worksheets: [{ name: 'Diagrams', url: 'https://www.google.com/search?q=plant+and+animal+cell+diagram+worksheet' }] }, ]}, { id: 'm2', title: 'Production Systems Case Study', topics: [ { id: 't3', title: 'Plant Production: Wheat', objective: 'Investigate wheat production from sowing to market.', completed: false, score: null, maxScore: 25, resources: [{ name: 'NSW DPI', url: 'https://www.dpi.nsw.gov.au/' }], worksheets: [{ name: 'Past HSC Qs', url: 'https://www.nsw.gov.au/education-and-training/nesa/past-hsc-exam-papers' }] }, { id: 't4', title: 'Animal Production: Prime Lambs', objective: 'Evaluate prime lamb production operations and challenges.', completed: false, score: null, maxScore: 25, resources: [{ name: 'Meat & Livestock Aus', url: 'https://www.mla.com.au/' }], worksheets: [{ name: 'Case Study Guide', url: 'https://www.google.com/search?q=agriculture+case+study+template' }] }, ]}, ]}
 };
 
 const calendarStructure = [
@@ -209,6 +136,7 @@ const Topic = ({ topic, subjectId, moduleId, onToggleComplete, onSetScore }) => 
 
 const Dashboard = ({ subjects }) => {
   const progressData = useMemo(() => {
+    if (!subjects) return { overall: 0, subjectProgress: [], completedTopics: 0, totalTopics: 0 };
     let totalTopics = 0;
     let completedTopics = 0;
     const subjectProgress = Object.keys(subjects).map(key => {
@@ -232,6 +160,7 @@ const Dashboard = ({ subjects }) => {
   }, [subjects]);
 
   const scoreData = useMemo(() => {
+    if (!subjects) return [];
     return Object.keys(subjects).map(key => {
       const subject = subjects[key];
       let totalScore = 0;
@@ -331,7 +260,7 @@ const Dashboard = ({ subjects }) => {
   );
 };
 
-const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploadWorksheet, onUploadResource }) => {
+const SubjectPage = ({ subject, subjectId, onUpdateData }) => {
     const [worksheetName, setWorksheetName] = useState('');
     const [worksheetUrl, setWorksheetUrl] = useState('');
     const [resourceName, setResourceName] = useState('');
@@ -340,7 +269,8 @@ const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploa
     const handleUploadWorksheet = (e) => {
         e.preventDefault();
         if (worksheetName && worksheetUrl) {
-            onUploadWorksheet(subjectId, { name: worksheetName, url: worksheetUrl });
+            const newWorksheets = [...(subject.uploadedWorksheets || []), { name: worksheetName, url: worksheetUrl }];
+            onUpdateData(`subjects.${subjectId}.uploadedWorksheets`, newWorksheets);
             setWorksheetName('');
             setWorksheetUrl('');
         }
@@ -349,10 +279,24 @@ const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploa
     const handleUploadResource = (e) => {
         e.preventDefault();
         if (resourceName && resourceUrl) {
-            onUploadResource(subjectId, { name: resourceName, url: resourceUrl });
+            const newResources = [...(subject.uploadedResources || []), { name: resourceName, url: resourceUrl }];
+            onUpdateData(`subjects.${subjectId}.uploadedResources`, newResources);
             setResourceName('');
             setResourceUrl('');
         }
+    };
+
+    const handleToggleComplete = (moduleId, topicId) => {
+        const moduleIndex = subject.modules.findIndex(m => m.id === moduleId);
+        const topicIndex = subject.modules[moduleIndex].topics.findIndex(t => t.id === topicId);
+        const currentStatus = subject.modules[moduleIndex].topics[topicIndex].completed;
+        onUpdateData(`subjects.${subjectId}.modules.${moduleIndex}.topics.${topicIndex}.completed`, !currentStatus);
+    };
+
+    const handleSetScore = (moduleId, topicId, score) => {
+        const moduleIndex = subject.modules.findIndex(m => m.id === moduleId);
+        const topicIndex = subject.modules[moduleIndex].topics.findIndex(t => t.id === topicId);
+        onUpdateData(`subjects.${subjectId}.modules.${moduleIndex}.topics.${topicIndex}.score`, score);
     };
 
     return (
@@ -372,8 +316,8 @@ const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploa
                                     topic={topic}
                                     subjectId={subjectId}
                                     moduleId={module.id}
-                                    onToggleComplete={onToggleComplete}
-                                    onSetScore={onSetScore}
+                                    onToggleComplete={() => handleToggleComplete(module.id, topic.id)}
+                                    onSetScore={(score) => handleSetScore(module.id, topic.id, score)}
                                 />
                             ))}
                         </div>
@@ -399,7 +343,7 @@ const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploa
                         </form>
                         <div className="mt-6">
                             <h3 className="font-semibold text-gray-200 mb-2">Uploaded:</h3>
-                            {subject.uploadedWorksheets.length > 0 ? (
+                            {subject.uploadedWorksheets && subject.uploadedWorksheets.length > 0 ? (
                                 <ul className="space-y-2">
                                     {subject.uploadedWorksheets.map((ws, index) => (
                                         <li key={index} className="flex items-center justify-between bg-gray-900/70 p-3 rounded-md">
@@ -436,7 +380,7 @@ const SubjectPage = ({ subject, subjectId, onToggleComplete, onSetScore, onUploa
                         </form>
                         <div className="mt-6">
                             <h3 className="font-semibold text-gray-200 mb-2">Saved Resources:</h3>
-                            {subject.uploadedResources.length > 0 ? (
+                            {subject.uploadedResources && subject.uploadedResources.length > 0 ? (
                                 <ul className="space-y-2">
                                     {subject.uploadedResources.map((res, index) => (
                                         <li key={index} className="flex items-center justify-between bg-gray-900/70 p-3 rounded-md">
@@ -481,7 +425,7 @@ const CalendarPage = ({ status, onUpdateStatus }) => {
                 <React.Fragment key={time}>
                     <div className="p-4 font-semibold text-gray-400 border-r border-gray-700 sticky left-0 bg-gray-800">{time}</div>
                     {calendarStructure.map((dayData) => (
-                        <div key={`${dayData.day}-${time}`} className={`p-2 text-center border-r border-gray-700 flex flex-col justify-center items-center gap-2 transition-colors ${getStatusColor(status[dayData.day][timeIndex])}`}>
+                        <div key={`${dayData.day}-${time}`} className={`p-2 text-center border-r border-gray-700 flex flex-col justify-center items-center gap-2 transition-colors ${status[dayData.day][timeIndex]}`}>
                             <span className="text-gray-200 text-sm">{dayData.tasks[timeIndex]}</span>
                             <div className="flex space-x-2">
                                 <button onClick={() => onUpdateStatus(dayData.day, timeIndex, 'Done')} className="p-1 rounded-full bg-green-500/20 hover:bg-green-500/40 text-green-300"><Check className="w-4 h-4"/></button>
@@ -501,80 +445,123 @@ const CalendarPage = ({ status, onUpdateStatus }) => {
 // --- MAIN APP COMPONENT ---
 
 export default function App() {
-  const [subjects, setSubjects] = useState(initialStudyData);
+  const [appData, setAppData] = useState(null);
   const [activePage, setActivePage] = useState('dashboard');
-  const [calendarStatus, setCalendarStatus] = useState(initialCalendarStatus());
+  const [userId, setUserId] = useState(null);
+  const [db, setDb] = useState(null);
+  const [configError, setConfigError] = useState(false);
 
-  const handleToggleComplete = (subjectId, moduleId, topicId) => {
-    setSubjects(prev => ({
-      ...prev,
-      [subjectId]: {
-        ...prev[subjectId],
-        modules: prev[subjectId].modules.map(mod => 
-          mod.id === moduleId ? { ...mod, topics: mod.topics.map(t => t.id === topicId ? { ...t, completed: !t.completed } : t) } : mod
-        )
+  // Initialize Firebase and Auth
+  useEffect(() => {
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+        setConfigError(true);
+        return;
+    }
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const firestore = getFirestore(app);
+    setDb(firestore);
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        signInAnonymously(auth).catch(error => {
+          console.error("Anonymous sign-in failed:", error);
+        });
       }
-    }));
-  };
+    });
+  }, []);
 
-  const handleSetScore = (subjectId, moduleId, topicId, score) => {
-    setSubjects(prev => ({
-      ...prev,
-      [subjectId]: {
-        ...prev[subjectId],
-        modules: prev[subjectId].modules.map(mod => 
-          mod.id === moduleId ? { ...mod, topics: mod.topics.map(t => t.id === topicId ? { ...t, score } : t) } : mod
-        )
+  // Listen for data changes from Firestore
+  useEffect(() => {
+    if (db && userId) {
+      const docRef = doc(db, 'users', userId);
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setAppData(docSnap.data());
+        } else {
+          // If no data exists for the user, create it with the initial structure
+          const initialData = {
+            subjects: initialStudyData,
+            calendar: initialCalendarStatus()
+          };
+          setDoc(docRef, initialData).then(() => {
+            setAppData(initialData);
+          });
+        }
+      });
+      return () => unsubscribe(); // Cleanup listener on component unmount
+    }
+  }, [db, userId]);
+
+  // Function to update a specific part of the data in Firestore
+  const handleUpdateData = async (path, value) => {
+    if (!db || !userId) return;
+    const docRef = doc(db, 'users', userId);
+    try {
+      // Using setDoc with merge: true is safer than updateDoc for nested objects
+      // as it won't fail if parent objects don't exist.
+      // However, for simple field updates, updateDoc is fine. We'll stick with it
+      // but a more robust solution might use a deep merge utility.
+      await updateDoc(docRef, { [path]: value });
+    } catch (error) {
+      console.error("Error updating document:", error);
+      if (error.code === 'not-found') {
+         const initialData = {
+            subjects: initialStudyData,
+            calendar: initialCalendarStatus()
+          };
+         await setDoc(docRef, initialData);
       }
-    }));
+    }
   };
-
-  const handleUploadWorksheet = (subjectId, worksheet) => {
-    setSubjects(prev => ({
-        ...prev,
-        [subjectId]: {
-            ...prev[subjectId],
-            uploadedWorksheets: [...prev[subjectId].uploadedWorksheets, worksheet]
-        }
-    }));
-  };
-
-  const handleUploadResource = (subjectId, resource) => {
-    setSubjects(prev => ({
-        ...prev,
-        [subjectId]: {
-            ...prev[subjectId],
-            uploadedResources: [...prev[subjectId].uploadedResources, resource]
-        }
-    }));
-  };
-
+  
   const handleUpdateCalendarStatus = (day, taskIndex, status) => {
-    setCalendarStatus(prev => ({
-        ...prev,
-        [day]: prev[day].map((s, i) => i === taskIndex ? status : s)
-    }));
+    const newStatus = { ...appData.calendar };
+    newStatus[day][taskIndex] = status;
+    handleUpdateData('calendar', newStatus);
   };
+
+  if (configError) {
+    return (
+        <div className="bg-red-900 text-white min-h-screen flex flex-col items-center justify-center p-8 text-center">
+            <AlertTriangle className="w-16 h-16 text-yellow-300 mb-6" />
+            <h1 className="text-4xl font-bold mb-4">Firebase Configuration Missing</h1>
+            <p className="text-xl mb-8 max-w-2xl">You need to add your unique Firebase configuration keys to the `App.jsx` file. Please replace the placeholder object with your actual keys.</p>
+            <div className="bg-gray-800 p-4 rounded-lg text-left text-sm font-mono">
+                <code>
+                    // 1. Go to your Firebase project settings.<br/>
+                    // 2. Find your web app configuration.<br/>
+                    // 3. Copy the firebaseConfig object.<br/>
+                    // 4. Paste it into App.jsx, replacing the placeholder.
+                </code>
+            </div>
+        </div>
+    );
+  }
 
   const renderPage = () => {
+    if (!appData) {
+      return <div className="w-full h-screen flex items-center justify-center text-white">Loading Study Hub...</div>;
+    }
+
     if (activePage === 'dashboard') {
-      return <Dashboard subjects={subjects} />;
+      return <Dashboard subjects={appData.subjects} />;
     }
     if (activePage === 'calendar') {
-      return <CalendarPage status={calendarStatus} onUpdateStatus={handleUpdateCalendarStatus} />;
+      return <CalendarPage status={appData.calendar} onUpdateStatus={handleUpdateCalendarStatus} />;
     }
-    const subject = subjects[activePage];
+    const subject = appData.subjects[activePage];
     if (subject) {
       return <SubjectPage 
         subject={subject} 
         subjectId={activePage} 
-        onToggleComplete={handleToggleComplete} 
-        onSetScore={handleSetScore}
-        onUploadWorksheet={handleUploadWorksheet}
-        onUploadResource={handleUploadResource}
+        onUpdateData={handleUpdateData}
       />;
     }
-    return <Dashboard subjects={subjects} />;
+    return <Dashboard subjects={appData.subjects} />;
   };
 
   return (
@@ -594,8 +581,8 @@ export default function App() {
           <li className="pt-4 mt-4 border-t border-gray-700">
             <span className="text-xs font-semibold text-gray-500 px-4">SUBJECTS</span>
           </li>
-          {Object.keys(subjects).map(key => {
-            const subject = subjects[key];
+          {appData && Object.keys(appData.subjects).map(key => {
+            const subject = appData.subjects[key];
             const SubjectIcon = subject.icon;
             return (
               <li key={key}>

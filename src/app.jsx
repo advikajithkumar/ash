@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Home, BookOpen, Target, Calendar, BarChart2, FileText, Link as LinkIcon, Upload, Check, X, ChevronsRight, Globe, AlertTriangle } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- IMPORTANT: PASTE YOUR FIREBASE CONFIG HERE ---
 // Replace this object with the one you copied from your Firebase project setup.
@@ -11,7 +11,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyDKKCRG6kLbI8wQAD-sbE8SiyOUjq1G_bE",
   authDomain: "advik-study.firebaseapp.com",
   projectId: "advik-study",
-  storageBucket: "advik-study.firebasestorage.app", // Corrected this line for you
+  storageBucket: "advik-study.firebasestorage.app",
   messagingSenderId: "445992809856",
   appId: "1:445992809856:web:105e09620a8cfbde197d65",
   measurementId: "G-KZCMCRDQXT"
@@ -450,6 +450,7 @@ export default function App() {
   const [userId, setUserId] = useState(null);
   const [db, setDb] = useState(null);
   const [configError, setConfigError] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Initializing...");
 
   // Initialize Firebase and Auth
   useEffect(() => {
@@ -458,6 +459,7 @@ export default function App() {
         return;
     }
 
+    setLoadingMessage("Connecting to Firebase...");
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const firestore = getFirestore(app);
@@ -465,10 +467,13 @@ export default function App() {
 
     onAuthStateChanged(auth, user => {
       if (user) {
+        setLoadingMessage("User authenticated. Fetching data...");
         setUserId(user.uid);
       } else {
+        setLoadingMessage("Creating a secure session...");
         signInAnonymously(auth).catch(error => {
           console.error("Anonymous sign-in failed:", error);
+          setLoadingMessage("Error: Could not create a secure session.");
         });
       }
     });
@@ -476,24 +481,28 @@ export default function App() {
 
   // Listen for data changes from Firestore
   useEffect(() => {
-    if (db && userId) {
-      const docRef = doc(db, 'users', userId);
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setAppData(docSnap.data());
-        } else {
-          // If no data exists for the user, create it with the initial structure
-          const initialData = {
-            subjects: initialStudyData,
-            calendar: initialCalendarStatus()
-          };
-          setDoc(docRef, initialData).then(() => {
-            setAppData(initialData);
-          });
-        }
-      });
-      return () => unsubscribe(); // Cleanup listener on component unmount
-    }
+    if (!db || !userId) return;
+
+    const docRef = doc(db, 'users', userId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setAppData(docSnap.data());
+      } else {
+        setLoadingMessage("No save file found. Creating a new one...");
+        const initialData = {
+          subjects: initialStudyData,
+          calendar: initialCalendarStatus()
+        };
+        setDoc(docRef, initialData).then(() => {
+          setAppData(initialData);
+        }).catch(e => console.error("Error creating initial document:", e));
+      }
+    }, (error) => {
+        console.error("Firestore snapshot error:", error);
+        setLoadingMessage("Error: Could not connect to the database.");
+    });
+
+    return () => unsubscribe(); // Cleanup listener on component unmount
   }, [db, userId]);
 
   // Function to update a specific part of the data in Firestore
@@ -501,20 +510,9 @@ export default function App() {
     if (!db || !userId) return;
     const docRef = doc(db, 'users', userId);
     try {
-      // Using setDoc with merge: true is safer than updateDoc for nested objects
-      // as it won't fail if parent objects don't exist.
-      // However, for simple field updates, updateDoc is fine. We'll stick with it
-      // but a more robust solution might use a deep merge utility.
       await updateDoc(docRef, { [path]: value });
     } catch (error) {
       console.error("Error updating document:", error);
-      if (error.code === 'not-found') {
-         const initialData = {
-            subjects: initialStudyData,
-            calendar: initialCalendarStatus()
-          };
-         await setDoc(docRef, initialData);
-      }
     }
   };
   
@@ -544,7 +542,7 @@ export default function App() {
 
   const renderPage = () => {
     if (!appData) {
-      return <div className="w-full h-screen flex items-center justify-center text-white">Loading Study Hub...</div>;
+      return <div className="w-full h-screen flex items-center justify-center text-white">{loadingMessage}</div>;
     }
 
     if (activePage === 'dashboard') {

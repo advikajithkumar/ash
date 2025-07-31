@@ -451,6 +451,7 @@ export default function App() {
   const [db, setDb] = useState(null);
   const [configError, setConfigError] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Initializing...");
+  const [isDataReady, setIsDataReady] = useState(false);
 
   // Initialize Firebase and Auth
   useEffect(() => {
@@ -467,7 +468,7 @@ export default function App() {
 
     onAuthStateChanged(auth, user => {
       if (user) {
-        setLoadingMessage("User authenticated. Fetching data...");
+        setLoadingMessage("User authenticated.");
         setUserId(user.uid);
       } else {
         setLoadingMessage("Creating a secure session...");
@@ -479,31 +480,49 @@ export default function App() {
     });
   }, []);
 
-  // Listen for data changes from Firestore
+  // One-time setup to ensure data document exists
   useEffect(() => {
-    if (!db || !userId) return;
-
-    const docRef = doc(db, 'users', userId);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setAppData(docSnap.data());
-      } else {
-        setLoadingMessage("No save file found. Creating a new one...");
-        const initialData = {
-          subjects: initialStudyData,
-          calendar: initialCalendarStatus()
-        };
-        setDoc(docRef, initialData).then(() => {
-          setAppData(initialData);
-        }).catch(e => console.error("Error creating initial document:", e));
-      }
-    }, (error) => {
-        console.error("Firestore snapshot error:", error);
-        setLoadingMessage("Error: Could not connect to the database.");
-    });
-
-    return () => unsubscribe(); // Cleanup listener on component unmount
+    const setupDocument = async () => {
+        if (db && userId) {
+            setLoadingMessage("Checking for saved data...");
+            const docRef = doc(db, 'users', userId);
+            try {
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    setLoadingMessage("No save file found. Creating a new one...");
+                    const initialData = {
+                        subjects: initialStudyData,
+                        calendar: initialCalendarStatus()
+                    };
+                    await setDoc(docRef, initialData);
+                }
+                setIsDataReady(true); // Signal that setup is complete
+            } catch (error) {
+                console.error("Error in setupDocument:", error);
+                setLoadingMessage("Error: Could not verify save file.");
+            }
+        }
+    };
+    setupDocument();
   }, [db, userId]);
+
+
+  // Listen for data changes from Firestore AFTER setup is complete
+  useEffect(() => {
+    if (isDataReady && db && userId) {
+      setLoadingMessage("Loading Study Hub...");
+      const docRef = doc(db, 'users', userId);
+      const unsubscribe = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setAppData(docSnap.data());
+        }
+      }, (error) => {
+          console.error("Firestore snapshot error:", error);
+          setLoadingMessage("Error: Could not connect to the database.");
+      });
+      return () => unsubscribe(); // Cleanup listener on component unmount
+    }
+  }, [isDataReady, db, userId]);
 
   // Function to update a specific part of the data in Firestore
   const handleUpdateData = async (path, value) => {

@@ -11,7 +11,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyDKKCRG6kLbI8wQAD-sbE8SiyOUjq1G_bE",
   authDomain: "advik-study.firebaseapp.com",
   projectId: "advik-study",
-  storageBucket: "advik-study.appspot.com", // Corrected this line for you
+  storageBucket: "advik-study.firebasestorage.app", // Corrected this line for you
   messagingSenderId: "445992809856",
   appId: "1:445992809856:web:105e09620a8cfbde197d65",
   measurementId: "G-KZCMCRDQXT"
